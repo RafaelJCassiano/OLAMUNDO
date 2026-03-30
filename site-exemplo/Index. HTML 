@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>SJC Auditoria - Campo</title>
+  <style>
+    :root { --primary: #0056b3; --bg: #f0f2f5; --card-bg: #ffffff; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); margin: 0; padding: 0; color: #1c1e21; }
+    .sticky-top { position: sticky; top: 0; z-index: 1000; background: var(--bg); padding: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    .header { background: var(--primary); color: white; padding: 12px; border-radius: 8px; margin-bottom: 8px; text-align: center; }
+    #search { width: 100%; padding: 15px; border: 2px solid var(--primary); border-radius: 25px; font-size: 16px; box-sizing: border-box; outline: none; background: white; }
+    .content { padding: 10px; }
+    .card { background: var(--card-bg); border-radius: 12px; padding: 15px; margin-bottom: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); border-left: 6px solid var(--primary); }
+    .info-row { display: flex; margin-bottom: 4px; font-size: 14px; }
+    .label { font-weight: 700; color: #555; min-width: 115px; }
+    .value { color: #000; flex: 1; }
+    .endereco-txt { color: var(--primary); font-weight: bold; font-size: 15px; margin-bottom: 8px; display: block; }
+    #loading { text-align: center; display: none; padding: 10px; color: var(--primary); font-weight: bold; }
+  </style>
+</head>
+<body>
+
+  <div class="sticky-top">
+    <div class="header">
+      <h2 style="margin:0; font-size: 18px;">Auditoria SJC</h2>
+    </div>
+    <input type="text" id="search" placeholder="Rua, Hidrômetro ou Fornecimento...">
+    <div id="loading">Buscando dados...</div>
+  </div>
+
+  <div class="content" id="results-container">
+    <p style="text-align: center; color: #666;">Digite para pesquisar.</p>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://smzehsmsqrshnvoiwzap.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_hAMXYnXJ5cjc8Ii9gAgscw_Uh3H_JM4';
+
+    const container = document.getElementById('results-container');
+    const loading = document.getElementById('loading');
+    let timeout = null;
+
+    document.getElementById('search').oninput = function () {
+      clearTimeout(timeout);
+      const t = this.value.trim().toUpperCase();
+      if (t.length < 3) return;
+      timeout = setTimeout(() => { executarBusca(t); }, 500);
+    };
+
+    async function executarBusca(t) {
+      loading.style.display = 'block';
+
+      // OR somente com colunas text com ilike
+      const whereOr = [
+        `Endereço.ilike.*${t}*`,
+        `Hidrômetro.ilike.*${t}*`
+      ];
+
+      // Se o usuário digitar só números, aí podemos buscar o bigint por igualdade
+      if (/^\d+$/.test(t)) {
+        whereOr.push(`Codigo_do_Fornecimento.eq.${t}`);
+      }
+
+      const url =
+        `${SUPABASE_URL}/rest/v1/Dados` +
+        `?select=${encodeURIComponent('ATC,Endereço,Codigo_do_Fornecimento,Hidrômetro,Leitura,Mes_Referencia')}` +
+        `&or=(${encodeURIComponent(whereOr.join(','))})` +
+        `&limit=50`;
+
+      try {
+        const response = await fetch(url, {
+          headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': `Bearer ${SUPABASE_KEY}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (!response.ok) {
+          const errText = await response.text();
+          container.innerHTML =
+            `<p style="text-align:center; color:red;">Erro ao buscar: ${response.status}</p>` +
+            `<p style="text-align:center; color:#8a0000; font-size:12px; white-space:pre-wrap;">${errText}</p>`;
+          return;
+        }
+
+        const dados = await response.json();
+        container.innerHTML = "";
+
+        if (!dados || dados.length === 0) {
+          container.innerHTML = "<p style='text-align:center'>Nada encontrado.</p>";
+          return;
+        }
+
+        dados.forEach(d => {
+          if (d.ATC === "ATC") return;
+
+          const card = document.createElement('div');
+          card.className = 'card';
+          card.innerHTML = `
+            <span class="endereco-txt">${d["Endereço"] || 'Sem Endereço'}</span>
+
+            <div class="info-row">
+              <span class="label">Fornecimento:</span>
